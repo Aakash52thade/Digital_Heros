@@ -152,15 +152,35 @@ export async function cancelSubscriptionAction(formData: FormData) {
 
   if (!stripeSubscriptionId) throw new Error("Missing subscription ID");
 
-  if (immediate) {
-    await stripe.subscriptions.cancel(stripeSubscriptionId);
-  } else {
-    await stripe.subscriptions.update(stripeSubscriptionId, {
-      cancel_at_period_end: true,
-    });
+  try {
+    if (immediate) {
+      await stripe.subscriptions.cancel(stripeSubscriptionId);
+    } else {
+      await stripe.subscriptions.update(stripeSubscriptionId, {
+        cancel_at_period_end: true,
+      });
+    }
+
+    await syncSubscriptionFromStripe(stripeSubscriptionId);
+  } catch (err: unknown) {
+    // If the subscription does not exist in Stripe (e.g. test dummy or different Stripe account),
+    // mark it canceled in the local database directly so the admin UI stays consistent without crashing.
+    const isMissing = err && typeof err === "object" && "code" in err && (err as { code: string }).code === "resource_missing";
+    if (isMissing) {
+      const adminClient = createAdminClient();
+      await adminClient
+        .from("subscriptions")
+        .update({
+          status: "canceled",
+          cancel_at_period_end: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("stripe_subscription_id", stripeSubscriptionId);
+    } else {
+      throw err;
+    }
   }
 
-  await syncSubscriptionFromStripe(stripeSubscriptionId);
   revalidatePath(`/admin/users/${userId}`);
 }
 
@@ -172,10 +192,27 @@ export async function resumeSubscriptionAction(formData: FormData) {
 
   if (!stripeSubscriptionId) throw new Error("Missing subscription ID");
 
-  await stripe.subscriptions.update(stripeSubscriptionId, {
-    cancel_at_period_end: false,
-  });
+  try {
+    await stripe.subscriptions.update(stripeSubscriptionId, {
+      cancel_at_period_end: false,
+    });
 
-  await syncSubscriptionFromStripe(stripeSubscriptionId);
+    await syncSubscriptionFromStripe(stripeSubscriptionId);
+  } catch (err: unknown) {
+    const isMissing = err && typeof err === "object" && "code" in err && (err as { code: string }).code === "resource_missing";
+    if (isMissing) {
+      const adminClient = createAdminClient();
+      await adminClient
+        .from("subscriptions")
+        .update({
+          cancel_at_period_end: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("stripe_subscription_id", stripeSubscriptionId);
+    } else {
+      throw err;
+    }
+  }
+
   revalidatePath(`/admin/users/${userId}`);
 }
