@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CompactSimulation } from "@/lib/draw";
+import { CompactSimulation } from "@/lib/draw-server";
 import { Button } from "@/components/ui/button";
 import {
   Card,

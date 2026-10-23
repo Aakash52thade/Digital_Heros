@@ -1,263 +1,230 @@
 /**
- * Pure draw engine and pool math per SPEC A2-A6.
- * Zero database calls.
+ * Draw engine. Pure functions only: no database, no network.
+ * All money is an integer in minor units (paise).
+ * Rules: SPEC.md A3-A7 and A17-A18.
  */
 
-export interface DrawEntry {
-  userId: string;
-  scores: number[]; // Exactly 5 scores (1-45)
-}
+export const DRAW_SIZE = 5;
+export const NUMBER_MIN = 1;
+export const NUMBER_MAX = 45;
 
-export interface SubscriberFee {
+export type DrawMode = 'random' | 'algorithmic';
+export type Tier = 5 | 4 | 3;
+/** Returns a float in [0, 1). Injected so tests can be deterministic. */
+export type Rng = () => number;
+
+export interface Entry {
   userId: string;
-  monthlyEquivalentMinor: number;
+  scores: number[]; // the user's current scores (eligible users have exactly 5)
 }
 
 export interface PoolSettings {
-  prize_pool_percent: number; // e.g. 50
-  tier5_percent: number;      // e.g. 40
-  tier4_percent: number;      // e.g. 35
-  tier3_percent: number;      // e.g. 25
+  prizePoolPercent: number;
+  tier5Percent: number;
+  tier4Percent: number;
+  tier3Percent: number;
 }
 
-export interface TierSummary {
-  pool: number;
-  winnersCount: number;
-  prizeEach: number;
-  leftover: number;
+export interface TierPools {
+  tier5: number;
+  tier4: number;
+  tier3: number;
 }
 
-export interface CompactSimulation {
-  numbers: number[];
-  activeSubscriberCount: number;
-  eligibleEntriesCount: number;
-  poolTotalMinor: number;
-  jackpotCarryInMinor: number;
-  tier5: TierSummary;
-  tier4: TierSummary;
-  tier3: TierSummary;
+export interface TierResult {
+  tier: Tier;
+  poolMinor: number;
+  winnerIds: string[];
+  prizeEachMinor: number;
+  paidOutMinor: number;
+  /** Not paid out: rounding remainder, or the whole pool when nobody won. */
+  leftoverMinor: number;
+}
+
+export interface EntryResult {
+  userId: string;
+  scores: number[];
+  matchCount: number;
+}
+
+export interface DrawOutcome {
+  entries: EntryResult[];
+  tiers: TierResult[]; // order: 5, 4, 3
+  /** Only the 5-match jackpot rolls over (A6). Includes any carry-in. */
   jackpotRolloverMinor: number;
 }
 
-export interface DrawResult {
-  drawnNumbers: number[];
-  activeSubscriberCount: number;
-  poolTotalMinor: number;
-  jackpotCarryInMinor: number;
-  tier5PoolMinor: number;
-  tier4PoolMinor: number;
-  tier3PoolMinor: number;
-  jackpotRolloverMinor: number;
-  entries: Array<{
-    userId: string;
-    scoresSnapshot: number[];
-    matchCount: number;
-  }>;
-  winners: Array<{
-    userId: string;
-    tier: 3 | 4 | 5;
-    prizeMinor: number;
-  }>;
-  simulation: CompactSimulation;
-}
+/** Default RNG backed by the platform's cryptographic generator. */
+export const secureRng: Rng = () => {
+  const buf = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(buf);
+  return buf[0] / 2 ** 32;
+};
 
-/**
- * Draws 5 distinct numbers (1..45).
- * Random mode: uniform selection without replacement.
- * Algorithmic mode: weight of number n = count of eligible users who have n in their scores + 1.
- */
-export function drawNumbers(
-  mode: "random" | "algorithmic",
-  entries: DrawEntry[],
-  randomSource: () => number = Math.random
-): number[] {
-  const allNumbers = Array.from({ length: 45 }, (_, i) => i + 1);
-
-  if (mode === "random") {
-    const pool = [...allNumbers];
-    const picked: number[] = [];
-    for (let i = 0; i < 5; i++) {
-      const idx = Math.floor(randomSource() * pool.length);
-      picked.push(pool.splice(idx, 1)[0]);
-    }
-    return picked.sort((a, b) => a - b);
-  }
-
-  // Algorithmic mode: weight = count(users who have n in scores) + 1
-  const freqMap: Record<number, number> = {};
-  for (const n of allNumbers) {
-    freqMap[n] = 0;
-  }
-  for (const entry of entries) {
-    const distinctScores = Array.from(new Set(entry.scores));
-    for (const score of distinctScores) {
-      if (freqMap[score] !== undefined) {
-        freqMap[score] += 1;
-      }
-    }
-  }
-
-  const items = allNumbers.map((num) => ({
-    num,
-    weight: freqMap[num] + 1,
-  }));
-
+/** Pick `count` distinct numbers by weight, without replacement. Sorted ascending. */
+function pickWeighted(weights: Map<number, number>, count: number, rng: Rng): number[] {
+  const remaining = new Map(weights);
   const picked: number[] = [];
-  for (let i = 0; i < 5; i++) {
-    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-    let rand = randomSource() * totalWeight;
-    let selectedIndex = 0;
-    for (let j = 0; j < items.length; j++) {
-      rand -= items[j].weight;
-      if (rand <= 0) {
-        selectedIndex = j;
+  for (let i = 0; i < count; i++) {
+    let total = 0;
+    for (const w of remaining.values()) total += w;
+    let r = rng() * total;
+    let chosen: number | undefined;
+    for (const [n, w] of remaining) {
+      r -= w;
+      if (r < 0) {
+        chosen = n;
         break;
       }
     }
-    picked.push(items.splice(selectedIndex, 1)[0].num);
+    // Floating-point safety net: take the last remaining number.
+    if (chosen === undefined) chosen = Array.from(remaining.keys()).pop() as number;
+    picked.push(chosen);
+    remaining.delete(chosen);
   }
-
   return picked.sort((a, b) => a - b);
 }
 
-/**
- * Executes a draw calculation: pool distribution, entry matches, winner determination, and rollover.
- */
-export function runDraw(params: {
-  mode: "random" | "algorithmic";
-  subscribers: SubscriberFee[];
-  entries: DrawEntry[];
-  settings: PoolSettings;
-  jackpotCarryInMinor?: number;
-  fixedNumbers?: number[];
-  randomSource?: () => number;
-}): DrawResult {
-  const {
-    mode,
-    subscribers,
-    entries,
-    settings,
-    jackpotCarryInMinor = 0,
-    fixedNumbers,
-    randomSource = Math.random,
-  } = params;
+/** A3, random mode: 5 distinct numbers from 1-45, uniform. */
+export function generateRandomNumbers(rng: Rng = secureRng): number[] {
+  const weights = new Map<number, number>();
+  for (let n = NUMBER_MIN; n <= NUMBER_MAX; n++) weights.set(n, 1);
+  return pickWeighted(weights, DRAW_SIZE, rng);
+}
 
-  // 1. Drawn numbers
-  const drawnNumbers =
-    fixedNumbers && fixedNumbers.length === 5
-      ? [...fixedNumbers].sort((a, b) => a - b)
-      : drawNumbers(mode, entries, randomSource);
-
-  const drawnSet = new Set(drawnNumbers);
-
-  // 2. Prize pool calculation per A2: 50% (prize_pool_percent) of each active subscriber's monthly-equivalent fee
-  let poolTotalMinor = 0;
-  for (const sub of subscribers) {
-    poolTotalMinor += Math.floor(
-      (sub.monthlyEquivalentMinor * settings.prize_pool_percent) / 100
-    );
+/** How many users have each number among their scores (each user counts once per number). */
+export function scoreFrequency(entries: Entry[]): Map<number, number> {
+  const freq = new Map<number, number>();
+  for (const e of entries) {
+    for (const n of new Set(e.scores)) freq.set(n, (freq.get(n) ?? 0) + 1);
   }
+  return freq;
+}
 
-  // 3. Tier pools (integer paise)
-  // Tier 5 pool gets carry-in jackpot added directly per A6 / A18
-  const baseTier5Pool = Math.floor(
-    (poolTotalMinor * settings.tier5_percent) / 100
-  );
-  const tier5PoolMinor = baseTier5Pool + Math.max(0, jackpotCarryInMinor);
-  const tier4PoolMinor = Math.floor(
-    (poolTotalMinor * settings.tier4_percent) / 100
-  );
-  const tier3PoolMinor = Math.floor(
-    (poolTotalMinor * settings.tier3_percent) / 100
-  );
+/** A4, algorithmic mode: weight of n = (users holding n) + 1, so every number can be drawn. */
+export function generateWeightedNumbers(entries: Entry[], rng: Rng = secureRng): number[] {
+  const freq = scoreFrequency(entries);
+  const weights = new Map<number, number>();
+  for (let n = NUMBER_MIN; n <= NUMBER_MAX; n++) weights.set(n, (freq.get(n) ?? 0) + 1);
+  return pickWeighted(weights, DRAW_SIZE, rng);
+}
 
-  // 4. Calculate match counts per user
-  const entryResults: DrawResult["entries"] = [];
-  const tier5Winners: string[] = [];
-  const tier4Winners: string[] = [];
-  const tier3Winners: string[] = [];
+export function generateNumbers(mode: DrawMode, entries: Entry[], rng: Rng = secureRng): number[] {
+  return mode === 'algorithmic' ? generateWeightedNumbers(entries, rng) : generateRandomNumbers(rng);
+}
 
-  for (const entry of entries) {
-    // Distinct values per A3
-    const distinctScores = Array.from(new Set(entry.scores));
-    let matchCount = 0;
-    for (const score of distinctScores) {
-      if (drawnSet.has(score)) {
-        matchCount++;
-      }
-    }
-
-    entryResults.push({
-      userId: entry.userId,
-      scoresSnapshot: [...entry.scores],
-      matchCount,
-    });
-
-    if (matchCount === 5) {
-      tier5Winners.push(entry.userId);
-    } else if (matchCount === 4) {
-      tier4Winners.push(entry.userId);
-    } else if (matchCount === 3) {
-      tier3Winners.push(entry.userId);
-    }
+/** Throws unless the numbers are 5 distinct integers from 1 to 45. */
+export function validateDrawnNumbers(nums: number[]): void {
+  const ok =
+    nums.length === DRAW_SIZE &&
+    new Set(nums).size === DRAW_SIZE &&
+    nums.every((n) => Number.isInteger(n) && n >= NUMBER_MIN && n <= NUMBER_MAX);
+  if (!ok) {
+    throw new Error(`Drawn numbers must be ${DRAW_SIZE} distinct integers from ${NUMBER_MIN} to ${NUMBER_MAX}`);
   }
+}
 
-  // 5. Tier splits & winner generation
-  const winners: DrawResult["winners"] = [];
+/** A3: how many drawn numbers appear in the user's scores (distinct values, each counted once). */
+export function countMatches(drawn: number[], scores: number[]): number {
+  const have = new Set(scores);
+  let matches = 0;
+  for (const n of new Set(drawn)) if (have.has(n)) matches++;
+  return matches;
+}
 
-  // Helper for tier distribution
-  function calculateTier(pool: number, winnerIds: string[], tierNum: 3 | 4 | 5): TierSummary {
-    if (winnerIds.length === 0) {
-      return { pool, winnersCount: 0, prizeEach: 0, leftover: pool };
-    }
-    const prizeEach = Math.floor(pool / winnerIds.length);
-    const leftover = pool - prizeEach * winnerIds.length;
-    for (const uid of winnerIds) {
-      winners.push({
-        userId: uid,
-        tier: tierNum,
-        prizeMinor: prizeEach,
-      });
-    }
-    return {
-      pool,
-      winnersCount: winnerIds.length,
-      prizeEach,
-      leftover,
-    };
+export function tierForMatches(matches: number): Tier | null {
+  switch (matches) {
+    case 5:
+      return 5;
+    case 4:
+      return 4;
+    case 3:
+      return 3;
+    default:
+      return null;
   }
+}
 
-  const tier5Summary = calculateTier(tier5PoolMinor, tier5Winners, 5);
-  const tier4Summary = calculateTier(tier4PoolMinor, tier4Winners, 4);
-  const tier3Summary = calculateTier(tier3PoolMinor, tier3Winners, 3);
+/** A2: pool = prizePoolPercent of the summed monthly-equivalent fees of ALL active subscribers. */
+export function monthlyPoolMinor(monthlyEquivalentsMinor: number[], prizePoolPercent: number): number {
+  const total = monthlyEquivalentsMinor.reduce((a, b) => a + b, 0);
+  return Math.floor((total * prizePoolPercent) / 100);
+}
 
-  // 6. Rollover: if no 5-match winner, entire tier 5 pool rolls over. Otherwise 0 rollover.
-  // Leftovers from tier 4 and 3 remain with platform.
-  const jackpotRolloverMinor = tier5Winners.length === 0 ? tier5PoolMinor : 0;
-
-  const simulation: CompactSimulation = {
-    numbers: drawnNumbers,
-    activeSubscriberCount: subscribers.length,
-    eligibleEntriesCount: entries.length,
-    poolTotalMinor,
-    jackpotCarryInMinor,
-    tier5: tier5Summary,
-    tier4: tier4Summary,
-    tier3: tier3Summary,
-    jackpotRolloverMinor,
-  };
-
+/** A6: split the pool into tiers. The jackpot carry-in is added to the 5-match tier only. */
+export function tierPools(poolTotalMinor: number, s: PoolSettings, jackpotCarryInMinor = 0): TierPools {
+  if (s.tier5Percent + s.tier4Percent + s.tier3Percent !== 100) {
+    throw new Error('Tier percentages must add up to 100');
+  }
   return {
-    drawnNumbers,
-    activeSubscriberCount: subscribers.length,
+    tier5: Math.floor((poolTotalMinor * s.tier5Percent) / 100) + jackpotCarryInMinor,
+    tier4: Math.floor((poolTotalMinor * s.tier4Percent) / 100),
+    tier3: Math.floor((poolTotalMinor * s.tier3Percent) / 100),
+  };
+}
+
+/**
+ * A6: find winners per tier, split each tier equally (rounded down to the paisa),
+ * and work out the jackpot rollover. Unclaimed 4/3 tiers do NOT roll over.
+ */
+export function evaluateDraw(drawn: number[], entries: Entry[], pools: TierPools): DrawOutcome {
+  const results: EntryResult[] = entries.map((e) => ({
+    userId: e.userId,
+    scores: e.scores,
+    matchCount: countMatches(drawn, e.scores),
+  }));
+  const poolByTier: Record<Tier, number> = { 5: pools.tier5, 4: pools.tier4, 3: pools.tier3 };
+
+  const tiers: TierResult[] = ([5, 4, 3] as Tier[]).map((tier) => {
+    const winnerIds = results.filter((r) => tierForMatches(r.matchCount) === tier).map((r) => r.userId);
+    const poolMinor = poolByTier[tier];
+    const prizeEachMinor = winnerIds.length > 0 ? Math.floor(poolMinor / winnerIds.length) : 0;
+    const paidOutMinor = prizeEachMinor * winnerIds.length;
+    return { tier, poolMinor, winnerIds, prizeEachMinor, paidOutMinor, leftoverMinor: poolMinor - paidOutMinor };
+  });
+
+  const jackpot = tiers[0];
+  return {
+    entries: results,
+    tiers,
+    jackpotRolloverMinor: jackpot.winnerIds.length === 0 ? jackpot.poolMinor : 0,
+  };
+}
+
+export interface RunDrawInput {
+  mode: DrawMode;
+  /** Eligible users only (active subscription and exactly 5 scores, A5). */
+  entries: Entry[];
+  /** One monthly-equivalent fee per ACTIVE subscriber (A2). */
+  monthlyEquivalentsMinor: number[];
+  settings: PoolSettings;
+  jackpotCarryInMinor: number;
+  /** Reuse existing numbers (publish keeps the simulated numbers, A17). */
+  drawnNumbers?: number[];
+  rng?: Rng;
+}
+
+export interface RunDrawResult {
+  drawnNumbers: number[];
+  activeSubscriberCount: number;
+  poolTotalMinor: number;
+  pools: TierPools;
+  jackpotCarryInMinor: number;
+  outcome: DrawOutcome;
+}
+
+/** Simulation and publish both call this, so they can never disagree. */
+export function runDraw(input: RunDrawInput): RunDrawResult {
+  const drawnNumbers = input.drawnNumbers ?? generateNumbers(input.mode, input.entries, input.rng);
+  validateDrawnNumbers(drawnNumbers);
+  const poolTotalMinor = monthlyPoolMinor(input.monthlyEquivalentsMinor, input.settings.prizePoolPercent);
+  const pools = tierPools(poolTotalMinor, input.settings, input.jackpotCarryInMinor);
+  return {
+    drawnNumbers: [...drawnNumbers].sort((a, b) => a - b),
+    activeSubscriberCount: input.monthlyEquivalentsMinor.length,
     poolTotalMinor,
-    jackpotCarryInMinor,
-    tier5PoolMinor,
-    tier4PoolMinor,
-    tier3PoolMinor,
-    jackpotRolloverMinor,
-    entries: entryResults,
-    winners,
-    simulation,
+    pools,
+    jackpotCarryInMinor: input.jackpotCarryInMinor,
+    outcome: evaluateDraw(drawnNumbers, input.entries, pools),
   };
 }

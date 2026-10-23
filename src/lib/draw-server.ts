@@ -2,17 +2,59 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { monthlyEquivalentMinor } from "@/lib/charity";
 import {
   runDraw,
-  DrawEntry,
-  SubscriberFee,
+  Entry,
   PoolSettings,
-  CompactSimulation,
+  RunDrawResult,
+  TierResult,
 } from "@/lib/draw";
 
+/** Shape stored in draws.simulation and consumed by /admin/draws page. */
+export interface CompactSimulation {
+  numbers: number[];
+  activeSubscriberCount: number;
+  eligibleEntriesCount: number;
+  poolTotalMinor: number;
+  jackpotCarryInMinor: number;
+  tier5: { pool: number; winnersCount: number; prizeEach: number; leftover: number };
+  tier4: { pool: number; winnersCount: number; prizeEach: number; leftover: number };
+  tier3: { pool: number; winnersCount: number; prizeEach: number; leftover: number };
+  jackpotRolloverMinor: number;
+}
+
 export interface DrawInputs {
-  subscribers: SubscriberFee[];
-  entries: DrawEntry[];
+  monthlyEquivalentsMinor: number[];
+  entries: Entry[];
   settings: PoolSettings;
   jackpotCarryInMinor: number;
+}
+
+/** Converts a TierResult into the compact shape expected by the admin page. */
+function tierSummary(t: TierResult) {
+  return {
+    pool: t.poolMinor,
+    winnersCount: t.winnerIds.length,
+    prizeEach: t.prizeEachMinor,
+    leftover: t.leftoverMinor,
+  };
+}
+
+/** Builds the compact simulation summary from a RunDrawResult. */
+function buildSimulation(
+  result: RunDrawResult,
+  eligibleEntriesCount: number
+): CompactSimulation {
+  const [t5, t4, t3] = result.outcome.tiers;
+  return {
+    numbers: result.drawnNumbers,
+    activeSubscriberCount: result.activeSubscriberCount,
+    eligibleEntriesCount,
+    poolTotalMinor: result.poolTotalMinor,
+    jackpotCarryInMinor: result.jackpotCarryInMinor,
+    tier5: tierSummary(t5),
+    tier4: tierSummary(t4),
+    tier3: tierSummary(t3),
+    jackpotRolloverMinor: result.outcome.jackpotRolloverMinor,
+  };
 }
 
 /**
@@ -37,7 +79,7 @@ export async function loadDrawInputs(month: string): Promise<DrawInputs> {
     throw new Error(`Failed to load subscriptions: ${subsError.message}`);
   }
 
-  const subscribers: SubscriberFee[] = [];
+  const monthlyEquivalentsMinor: number[] = [];
   const activeUserIds = new Set<string>();
 
   for (const sub of subs || []) {
@@ -46,15 +88,12 @@ export async function loadDrawInputs(month: string): Promise<DrawInputs> {
 
     const plan = sub.plans as unknown as { price_minor: number; interval: string } | null;
     if (plan) {
-      subscribers.push({
-        userId: sub.user_id,
-        monthlyEquivalentMinor: monthlyEquivalentMinor(plan),
-      });
+      monthlyEquivalentsMinor.push(monthlyEquivalentMinor(plan));
     }
   }
 
   // 2. Fetch scores for eligible users (active subscribers only)
-  const entries: DrawEntry[] = [];
+  const entries: Entry[] = [];
   if (activeUserIds.size > 0) {
     const { data: scoresData, error: scoresError } = await adminClient
       .from("scores")
@@ -77,30 +116,27 @@ export async function loadDrawInputs(month: string): Promise<DrawInputs> {
     // Only entries with exactly 5 scores per SPEC A5
     for (const [userId, userScores] of Object.entries(scoresByUser)) {
       if (userScores.length === 5) {
-        entries.push({
-          userId,
-          scores: userScores,
-        });
+        entries.push({ userId, scores: userScores });
       }
     }
   }
 
-  // 3. Platform settings
-  const { data: platformSettings, error: settingsError } = await adminClient
+  // 3. Platform settings — map snake_case DB columns to camelCase PoolSettings
+  const { data: ps, error: settingsError } = await adminClient
     .from("platform_settings")
     .select("prize_pool_percent, tier5_percent, tier4_percent, tier3_percent")
     .eq("id", 1)
     .single();
 
-  if (settingsError || !platformSettings) {
+  if (settingsError || !ps) {
     throw new Error("Failed to load platform settings");
   }
 
   const settings: PoolSettings = {
-    prize_pool_percent: platformSettings.prize_pool_percent,
-    tier5_percent: platformSettings.tier5_percent,
-    tier4_percent: platformSettings.tier4_percent,
-    tier3_percent: platformSettings.tier3_percent,
+    prizePoolPercent: ps.prize_pool_percent,
+    tier5Percent: ps.tier5_percent,
+    tier4Percent: ps.tier4_percent,
+    tier3Percent: ps.tier3_percent,
   };
 
   // 4. Jackpot carry-in from latest published draw with earlier month per A18
@@ -116,7 +152,7 @@ export async function loadDrawInputs(month: string): Promise<DrawInputs> {
   const jackpotCarryInMinor = lastPublished?.jackpot_rollover_minor ?? 0;
 
   return {
-    subscribers,
+    monthlyEquivalentsMinor,
     entries,
     settings,
     jackpotCarryInMinor,
@@ -148,11 +184,13 @@ export async function simulateDraw(
   const inputs = await loadDrawInputs(month);
   const result = runDraw({
     mode,
-    subscribers: inputs.subscribers,
+    monthlyEquivalentsMinor: inputs.monthlyEquivalentsMinor,
     entries: inputs.entries,
     settings: inputs.settings,
     jackpotCarryInMinor: inputs.jackpotCarryInMinor,
   });
+
+  const simulation = buildSimulation(result, inputs.entries.length);
 
   // Save compact simulation jsonb and drawn_numbers into draws table (status draft)
   const { error: upsertError } = await adminClient.from("draws").upsert(
@@ -164,11 +202,11 @@ export async function simulateDraw(
       active_subscriber_count: result.activeSubscriberCount,
       pool_total_minor: result.poolTotalMinor,
       jackpot_carry_in_minor: result.jackpotCarryInMinor,
-      tier5_pool_minor: result.tier5PoolMinor,
-      tier4_pool_minor: result.tier4PoolMinor,
-      tier3_pool_minor: result.tier3PoolMinor,
-      jackpot_rollover_minor: result.jackpotRolloverMinor,
-      simulation: result.simulation,
+      tier5_pool_minor: result.pools.tier5,
+      tier4_pool_minor: result.pools.tier4,
+      tier3_pool_minor: result.pools.tier3,
+      jackpot_rollover_minor: result.outcome.jackpotRolloverMinor,
+      simulation,
     },
     { onConflict: "month" }
   );
@@ -177,7 +215,7 @@ export async function simulateDraw(
     throw new Error(`Failed to save simulation: ${upsertError.message}`);
   }
 
-  return result.simulation;
+  return simulation;
 }
 
 /**
@@ -211,33 +249,38 @@ export async function publishDraw(drawId: string) {
   // Run draw locking in the simulated numbers per A17
   const result = runDraw({
     mode: draw.mode as "random" | "algorithmic",
-    subscribers: inputs.subscribers,
+    monthlyEquivalentsMinor: inputs.monthlyEquivalentsMinor,
     entries: inputs.entries,
     settings: inputs.settings,
     jackpotCarryInMinor: inputs.jackpotCarryInMinor,
-    fixedNumbers: draw.drawn_numbers,
+    drawnNumbers: draw.drawn_numbers,
   });
 
-  // Build payload for RPC publish_draw
+  // Flatten winners from outcome.tiers (each tier has winnerIds and prizeEachMinor)
+  const winners = result.outcome.tiers.flatMap((t) =>
+    t.winnerIds.map((userId) => ({
+      user_id: userId,
+      tier: t.tier,
+      prize_minor: t.prizeEachMinor,
+    }))
+  );
+
+  // Build payload for RPC publish_draw — keys must match the SQL function exactly
   const payload = {
     drawn_numbers: result.drawnNumbers,
     active_subscriber_count: result.activeSubscriberCount,
     pool_total_minor: result.poolTotalMinor,
     jackpot_carry_in_minor: result.jackpotCarryInMinor,
-    tier5_pool_minor: result.tier5PoolMinor,
-    tier4_pool_minor: result.tier4PoolMinor,
-    tier3_pool_minor: result.tier3PoolMinor,
-    jackpot_rollover_minor: result.jackpotRolloverMinor,
-    entries: result.entries.map((e) => ({
+    tier5_pool_minor: result.pools.tier5,
+    tier4_pool_minor: result.pools.tier4,
+    tier3_pool_minor: result.pools.tier3,
+    jackpot_rollover_minor: result.outcome.jackpotRolloverMinor,
+    entries: result.outcome.entries.map((e) => ({
       user_id: e.userId,
-      scores_snapshot: e.scoresSnapshot,
+      scores_snapshot: e.scores,
       match_count: e.matchCount,
     })),
-    winners: result.winners.map((w) => ({
-      user_id: w.userId,
-      tier: w.tier,
-      prize_minor: w.prizeMinor,
-    })),
+    winners,
   };
 
   const { error: rpcError } = await adminClient.rpc("publish_draw", {
