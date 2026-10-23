@@ -58,7 +58,7 @@ export default async function CharityDetailPage({
             href="/charities"
             className="text-sm font-medium text-primary hover:underline"
           >
-            ΓåÉ Back to All Charities
+            ← Back to All Charities
           </Link>
           {user && (
             <Button asChild variant="ghost" size="sm">
@@ -69,7 +69,7 @@ export default async function CharityDetailPage({
 
         {searchParams?.donated === "1" && (
           <div className="rounded-lg bg-success/15 border border-success/30 p-4 text-success font-medium text-center">
-            ≡ƒÄë Thank you for your generous contribution to {charity.name}!
+            🎉 Thank you for your generous contribution to {charity.name}!
           </div>
         )}
 
@@ -171,7 +171,7 @@ export default async function CharityDetailPage({
                   <CardContent className="space-y-2 text-sm">
                     {evt.location && (
                       <p className="text-xs font-semibold text-primary">
-                        ≡ƒôì {evt.location}
+                        📍 {evt.location}
                       </p>
                     )}
                     <p className="text-muted-foreground">{evt.description}</p>
