@@ -48,10 +48,18 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  // Logged-in users visiting /login or /signup are redirected
+  // Logged-in users visiting /login or /signup are redirected.
+  // Preserve checkout query params so the dashboard can show the success banner.
   if (user && (path === "/login" || path === "/signup")) {
     const url = request.nextUrl.clone();
+    const checkout = request.nextUrl.searchParams.get("checkout");
+    const sessionId = request.nextUrl.searchParams.get("session_id");
     url.pathname = "/dashboard";
+    url.search = ""; // clear first
+    if (checkout && sessionId) {
+      url.searchParams.set("checkout", checkout);
+      url.searchParams.set("session_id", sessionId);
+    }
     return NextResponse.redirect(url);
   }
 
@@ -59,6 +67,7 @@ export async function updateSession(request: NextRequest) {
   if (!user && (path.startsWith("/dashboard") || path.startsWith("/admin"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
