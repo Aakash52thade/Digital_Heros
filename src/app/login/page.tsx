@@ -7,12 +7,21 @@ export const metadata = {
   title: "Log In - Digital Heroes",
 };
 
-export default async function LoginPage() {
+interface LoginPageProps {
+  searchParams?: {
+    checkout?: string;
+    session_id?: string;
+    redirectTo?: string;
+  };
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // If already logged in, redirect right away
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -20,11 +29,17 @@ export default async function LoginPage() {
       .eq("id", user.id)
       .single();
 
-    if (profile?.role === "admin") {
-      redirect("/admin");
-    } else {
-      redirect("/dashboard");
-    }
+    const target = searchParams?.checkout === "success" && searchParams.session_id
+      ? `/dashboard?checkout=success&session_id=${encodeURIComponent(searchParams.session_id)}`
+      : searchParams?.redirectTo || (profile?.role === "admin" ? "/admin" : "/dashboard");
+
+    redirect(target);
+  }
+
+  // Preserve checkout query params across login
+  let redirectTo = searchParams?.redirectTo || "";
+  if (searchParams?.checkout === "success" && searchParams.session_id) {
+    redirectTo = `/dashboard?checkout=success&session_id=${encodeURIComponent(searchParams.session_id)}`;
   }
 
   return (
@@ -72,7 +87,7 @@ export default async function LoginPage() {
               Digital Heroes
             </Link>
           </div>
-          <LoginForm />
+          <LoginForm redirectTo={redirectTo} />
         </div>
       </div>
     </main>

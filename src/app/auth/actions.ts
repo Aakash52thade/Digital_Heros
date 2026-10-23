@@ -64,10 +64,12 @@ export async function loginAction(
     .eq("id", data.user.id)
     .single();
 
+  const redirectTo = (formData.get("redirectTo") as string) || "";
+
   if (profile?.role === "admin") {
-    redirect("/admin");
+    redirect(redirectTo && redirectTo.startsWith("/admin") ? redirectTo : "/admin");
   } else {
-    redirect("/dashboard");
+    redirect(redirectTo && redirectTo.startsWith("/dashboard") ? redirectTo : "/dashboard");
   }
 }
 

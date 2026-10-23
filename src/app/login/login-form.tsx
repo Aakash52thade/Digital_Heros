@@ -29,7 +29,7 @@ function SubmitButton() {
   );
 }
 
-export function LoginForm() {
+export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   const [state, formAction] = useFormState(loginAction, undefined);
 
   return (
@@ -41,6 +41,7 @@ export function LoginForm() {
         </CardDescription>
       </CardHeader>
       <form action={formAction}>
+        {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
         <CardContent className="space-y-4">
           {state?.error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive font-medium border border-destructive/20">
