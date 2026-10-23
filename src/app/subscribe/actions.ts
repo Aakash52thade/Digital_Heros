@@ -6,6 +6,7 @@ import { stripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSubscriptionState } from "@/lib/subscription";
+import { getSiteUrl } from "@/lib/site-url";
 
 const planKeySchema = z.enum(["monthly", "yearly"]);
 
@@ -30,7 +31,7 @@ export async function createCheckoutOrPortalSession(formData: FormData) {
     redirect("/login");
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const siteUrl = await getSiteUrl();
   const subState = await getSubscriptionState(user.id);
 
   // If already active, redirect to billing portal
@@ -185,7 +186,7 @@ export async function openBillingPortal() {
     redirect("/subscribe");
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const siteUrl = await getSiteUrl();
   const portalSession = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: `${siteUrl}/dashboard`,

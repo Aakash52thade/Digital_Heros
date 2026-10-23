@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { stripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
+import { getSiteUrl } from "@/lib/site-url";
 
 const donationSchema = z.object({
   charityId: z.string().uuid("Invalid charity ID"),
@@ -51,7 +52,7 @@ export async function createDonationCheckoutAction(formData: FormData) {
     throw new Error("Charity not found");
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const siteUrl = await getSiteUrl();
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
