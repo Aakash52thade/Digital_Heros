@@ -16,13 +16,14 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - api/stripe/webhook (Stripe webhook raw payload endpoint)
-     * - public asset files (svg, png, jpg, etc.)
+     * Only run auth middleware on routes requiring session validation or redirect checks:
+     * - /dashboard and all child routes
+     * - /admin and all child routes
+     * - /login and /signup (redirect if logged in)
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/dashboard/:path*",
+    "/admin/:path*",
+    "/login",
+    "/signup",
   ],
 };

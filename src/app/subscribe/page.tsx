@@ -56,7 +56,7 @@ export default async function SubscribePage() {
 
         <div className="grid md:grid-cols-2 gap-8 items-stretch">
           {/* Monthly Plan */}
-          <Card className="flex flex-col justify-between border-border relative">
+          <Card className="flex flex-col justify-between border-border relative hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader>
               <CardTitle className="text-2xl">{monthlyPlan?.name || "Monthly Hero"}</CardTitle>
               <CardDescription>
@@ -88,7 +88,7 @@ export default async function SubscribePage() {
           </Card>
 
           {/* Yearly Plan */}
-          <Card className="flex flex-col justify-between border-primary/40 relative shadow-md">
+          <Card className="flex flex-col justify-between border-primary/40 relative shadow-md hover:-translate-y-1 hover:shadow-lg transition-all">
             <div className="absolute -top-3 right-4 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
               Best Value
             </div>

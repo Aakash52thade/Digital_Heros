@@ -121,7 +121,12 @@ export default async function AdminWinnersPage({ searchParams }: AdminWinnersPag
           </CardHeader>
           <CardContent>
             {(!winners || winners.length === 0) ? (
-              <p className="text-sm text-muted-foreground">No winners found.</p>
+              <div className="py-12 text-center space-y-2">
+                <p className="text-base font-medium text-foreground">No winners found</p>
+                <p className="text-sm text-muted-foreground">
+                  Once monthly draws are published, winning member accounts and proof submissions appear here.
+                </p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse">

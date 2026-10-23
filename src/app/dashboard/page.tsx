@@ -62,26 +62,37 @@ export default async function DashboardPage({
     }
   }
 
-  // 1. Fetch subscription state & profile
-  const subState = await getSubscriptionState(userId);
+  // Today in Asia/Kolkata
+  const now = new Date();
+  const currentMonthIST = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+  }).format(now);
+  const currentMonthDate = `${currentMonthIST}-01`;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role, charity_id, charity_percent, charities(id, name, slug)")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const { data: allCharities } = await supabase
-    .from("charities")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
-
-  const { data: settings } = await supabase
-    .from("platform_settings")
-    .select("min_charity_percent, prize_pool_percent")
-    .eq("id", 1)
-    .single();
+  // Parallelize independent queries via Promise.all
+  const [
+    subState,
+    { data: profile },
+    { data: allCharities },
+    { data: settings },
+    { data: scoresData },
+    { count: totalEntriesCount },
+    { data: recentEntriesData },
+    { data: currentMonthDraw },
+    { data: winnersData },
+  ] = await Promise.all([
+    getSubscriptionState(userId),
+    supabase.from("profiles").select("full_name, role, charity_id, charity_percent, charities(id, name, slug)").eq("id", userId).maybeSingle(),
+    supabase.from("charities").select("id, name").eq("is_active", true).order("name", { ascending: true }),
+    supabase.from("platform_settings").select("min_charity_percent, prize_pool_percent").eq("id", 1).single(),
+    supabase.from("scores").select("id, score, played_on").eq("user_id", userId).order("played_on", { ascending: false }).limit(5),
+    supabase.from("draw_entries").select("*", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("draw_entries").select("draw_id, match_count, scores_snapshot, draws(month, drawn_numbers, status)").eq("user_id", userId).order("draw_id", { ascending: false }).limit(5),
+    supabase.from("draws").select("status").eq("month", currentMonthDate).maybeSingle(),
+    supabase.from("winners").select("prize_minor, payment_status").eq("user_id", userId),
+  ]);
 
   const settingsConfig = {
     min_charity_percent: settings?.min_charity_percent ?? 10,
@@ -119,46 +130,8 @@ export default async function DashboardPage({
   } | null;
   const charityName = charityRelation?.name || "No charity chosen";
 
-  // 2. Fetch User's Latest 5 Scores
-  const { data: scoresData } = await supabase
-    .from("scores")
-    .select("id, score, played_on")
-    .eq("user_id", userId)
-    .order("played_on", { ascending: false })
-    .limit(5);
-
   const scores = scoresData || [];
   const scoreCount = scores.length;
-
-  // 3. Participation Data: Total draws entered & last 5 entries
-  const { count: totalEntriesCount } = await supabase
-    .from("draw_entries")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId);
-
-  const { data: recentEntriesData } = await supabase
-    .from("draw_entries")
-    .select("draw_id, match_count, scores_snapshot, draws(month, drawn_numbers, status)")
-    .eq("user_id", userId)
-    .order("draw_id", { ascending: false })
-    .limit(5);
-
-  // 4. Upcoming Draw Month per A20
-  // Today in Asia/Kolkata
-  const now = new Date();
-  const currentMonthIST = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-  }).format(now);
-  const currentMonthDate = `${currentMonthIST}-01`;
-
-  // Check if current month draw is published
-  const { data: currentMonthDraw } = await supabase
-    .from("draws")
-    .select("status")
-    .eq("month", currentMonthDate)
-    .maybeSingle();
 
   let upcomingDrawMonth = currentMonthIST;
   if (currentMonthDraw && currentMonthDraw.status === "published") {
@@ -178,12 +151,6 @@ export default async function DashboardPage({
   } else {
     upcomingStatusReason = "Qualified & entered";
   }
-
-  // 5. Winnings summary
-  const { data: winnersData } = await supabase
-    .from("winners")
-    .select("prize_minor, payment_status")
-    .eq("user_id", userId);
 
   let totalWonMinor = 0;
   let pendingWonMinor = 0;
@@ -275,7 +242,7 @@ export default async function DashboardPage({
         {/* 5-Module Responsive Grid */}
         <div className="grid md:grid-cols-2 gap-6">
           {/* Module (a): Subscription Status */}
-          <Card className="border-border flex flex-col justify-between">
+          <Card className="border-border flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Membership</CardTitle>
@@ -330,7 +297,7 @@ export default async function DashboardPage({
           </Card>
 
           {/* Module (b): Golf Scores Overview */}
-          <Card className="border-border flex flex-col justify-between">
+          <Card className="border-border flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Golf Scores</CardTitle>
@@ -380,7 +347,7 @@ export default async function DashboardPage({
           </Card>
 
           {/* Module (c): Charity Impact */}
-          <Card className="border-border flex flex-col justify-between">
+          <Card className="border-border flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Your Charity</CardTitle>
@@ -422,7 +389,7 @@ export default async function DashboardPage({
           </Card>
 
           {/* Module (d): Draw Participation (A20) */}
-          <Card className="border-border flex flex-col justify-between">
+          <Card className="border-border flex flex-col justify-between hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Draw Participation</CardTitle>
@@ -495,7 +462,7 @@ export default async function DashboardPage({
           </Card>
 
           {/* Module (e): Prize Winnings Summary */}
-          <Card className="border-border md:col-span-2">
+          <Card className="border-border md:col-span-2 hover:-translate-y-1 hover:shadow-md transition-all">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>

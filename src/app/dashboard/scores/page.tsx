@@ -73,9 +73,12 @@ export default async function ScoresPage() {
           </CardHeader>
           <CardContent>
             {scoresList.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No scores recorded yet. Add your first score above!
-              </p>
+              <div className="py-12 text-center space-y-2">
+                <p className="text-base font-medium text-foreground">No scores recorded yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Add your first Stableford score using the form above to start qualifying for the next draw.
+                </p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">

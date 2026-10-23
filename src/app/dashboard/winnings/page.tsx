@@ -65,11 +65,19 @@ export default async function WinningsPage() {
 
         {(!winnings || winnings.length === 0) ? (
           <Card className="border-border">
-            <CardContent className="py-12 text-center space-y-3">
-              <p className="text-muted-foreground">
-                You haven&apos;t won any draw prizes yet. Keep submitting your 5 monthly golf scores!
-              </p>
-              <Button asChild variant="outline">
+            <CardContent className="py-16 text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto text-xl font-bold">
+                🏆
+              </div>
+              <div className="space-y-1">
+                <p className="text-lg font-bold font-heading text-foreground">
+                  No prize winnings yet
+                </p>
+                <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                  Keep submitting your 5 monthly Stableford scores. When you match 3 or more numbers in a published draw, your prize will appear right here!
+                </p>
+              </div>
+              <Button asChild variant="accent">
                 <Link href="/dashboard/scores">Enter Golf Scores</Link>
               </Button>
             </CardContent>

@@ -18,12 +18,12 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/admin" className="font-heading font-bold text-lg text-primary">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto py-1">
+            <Link href="/admin" className="font-heading font-bold text-lg text-primary shrink-0">
               Admin Portal
             </Link>
-            <nav className="flex items-center gap-1 text-sm font-medium">
+            <nav className="flex items-center gap-1 text-sm font-medium shrink-0">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
