@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { signupAction } from "@/app/auth/actions";
@@ -15,6 +16,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+interface CharityOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface SignupFormProps {
+  charities: CharityOption[];
+  minPercent: number;
+  maxPercent: number;
+  preselectedCharityId?: string;
+}
+
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -29,8 +43,14 @@ function SubmitButton() {
   );
 }
 
-export function SignupForm() {
+export function SignupForm({
+  charities,
+  minPercent,
+  maxPercent,
+  preselectedCharityId,
+}: SignupFormProps) {
   const [state, formAction] = useFormState(signupAction, undefined);
+  const [percent, setPercent] = useState<number>(minPercent);
 
   return (
     <Card className="w-full max-w-md shadow-md border-border">
@@ -84,6 +104,45 @@ export function SignupForm() {
               required
               autoComplete="new-password"
             />
+          </div>
+
+          {/* Charity Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="charityId">Choose Your Supported Charity</Label>
+            <select
+              id="charityId"
+              name="charityId"
+              required
+              defaultValue={preselectedCharityId || (charities[0]?.id ?? "")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {charities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Charity Donation Percentage Control */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-sm">
+              <Label htmlFor="charityPercent">Charity Share of Fee</Label>
+              <span className="font-semibold text-primary">{percent}%</span>
+            </div>
+            <Input
+              id="charityPercent"
+              name="charityPercent"
+              type="range"
+              min={minPercent}
+              max={maxPercent}
+              value={percent}
+              onChange={(e) => setPercent(Number(e.target.value))}
+              className="h-6 cursor-pointer"
+            />
+            <p className="text-xs text-muted-foreground">
+              Between {minPercent}% and {maxPercent}% of your fee goes directly to your charity.
+            </p>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">

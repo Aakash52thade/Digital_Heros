@@ -30,6 +30,7 @@ const sampleCharities = [
   {
     name: "Clean Water Initiative",
     slug: "clean-water-initiative",
+    category: "Water & Sanitation",
     description:
       "Bringing sustainable clean drinking water to remote and underserved rural communities.",
     image_url: "https://images.unsplash.com/photo-1541544741938-0af808871cc0",
@@ -47,6 +48,7 @@ const sampleCharities = [
   {
     name: "Youth Bright Horizons",
     slug: "youth-bright-horizons",
+    category: "Education & Youth",
     description:
       "Empowering underprivileged youth through mentorship, education grants, and STEM resources.",
     image_url: "https://images.unsplash.com/photo-1509062522246-3755977927d7",
@@ -64,6 +66,7 @@ const sampleCharities = [
   {
     name: "Green Earth Forest Project",
     slug: "green-earth-forest",
+    category: "Environment & Conservation",
     description:
       "Reforesting native woodlands and restoring biodiversity across degraded ecosystems.",
     image_url: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09",
@@ -81,6 +84,7 @@ const sampleCharities = [
   {
     name: "Community Food Relief",
     slug: "community-food-relief",
+    category: "Hunger & Nutrition",
     description:
       "Distributing fresh nutritious groceries and prepared meals to families facing food insecurity.",
     image_url: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c",
@@ -98,6 +102,7 @@ const sampleCharities = [
   {
     name: "Senior Care & Companionship",
     slug: "senior-care-companionship",
+    category: "Elderly & Healthcare",
     description:
       "Providing compassionate home visits, medical transportation, and wellness activities for isolated elders.",
     image_url: "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289",

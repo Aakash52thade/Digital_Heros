@@ -15,6 +15,10 @@ A9 Charity: chosen at signup, min 10%, user can raise up to 50% (pool takes 50%,
 A10 Winner flow: awaiting_proof, then submitted (screenshot of scores), then admin approves or rejects. Payment: pending then paid.
 A11 Subscription is active when status = active AND current_period_end is in the future. A canceled subscription stays active until period end.
 A12 Stripe is the source of truth; our DB mirrors it via webhooks.
+A13 Score date cannot be in the future (today in Asia/Kolkata). Editing may change score or date; one-per-date still applies.
+A14 Donations: one-off Stripe Checkout (payment mode), min 10000 and max 10000000 paise, anyone can donate (guests too), stored in `donations`, never in the prize pool.
+A15 Any logged-in user can change charity and %. Only active subscribers can write scores (UI and RLS).
+A16 Charity % range = min_charity_percent .. (100 - prize_pool_percent) from platform_settings. Never hard-code 10 or 50.
 
 ## Tables (all in supabase/migrations/0001_init.sql)
 - profiles: id (= auth.users.id), full_name, role ('subscriber'|'admin', default 'subscriber'), charity_id, charity_percent int default 10 check 10..100, stripe_customer_id, created_at

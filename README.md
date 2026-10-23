@@ -19,6 +19,8 @@ Digital Heroes is a charity-first subscription platform where users track their 
 Execute migrations in your Supabase project (via SQL Editor):
 - `supabase/migrations/0001_init.sql` (Phase 1 core schema)
 - `supabase/migrations/0002_phase2.sql` (Phase 2 charity percentage check and nullable payment charity)
+- `supabase/migrations/0003_phase3.sql` (Phase 3 charity category, subscription RLS guard, rolling-5 trigger)
+- `supabase/migrations/0004_phase4.sql` (Phase 4 publish_draw function, draw/winner RLS)
 
 ## 3. Seed Database & Stripe Products
 

@@ -40,12 +40,37 @@ export async function POST(req: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.subscription) {
+        if (session.mode === "subscription" && session.subscription) {
           const subId =
             typeof session.subscription === "string"
               ? session.subscription
               : session.subscription.id;
           await syncSubscriptionFromStripe(subId);
+        } else if (
+          session.mode === "payment" &&
+          session.metadata?.type === "donation"
+        ) {
+          const charityId = session.metadata.charity_id;
+          const userId = session.metadata.user_id || null;
+          const paymentIntentId =
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id;
+          const amountMinor = session.amount_total || 0;
+
+          if (paymentIntentId && charityId) {
+            // Idempotent upsert on stripe_payment_intent_id
+            await adminClient.from("donations").upsert(
+              {
+                user_id: userId,
+                charity_id: charityId,
+                amount_minor: amountMinor,
+                stripe_payment_intent_id: paymentIntentId,
+                status: "succeeded",
+              },
+              { onConflict: "stripe_payment_intent_id" }
+            );
+          }
         }
         break;
       }

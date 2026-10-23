@@ -1,26 +1,20 @@
 # Progress
-Phase 1: completed
-Phase 2: completed
+Phase 1: completed | Phase 2: completed | Phase 3: completed | Phase 4: completed
 
 ## What is done
-- Updated SPEC.md (A9 10-50%, A12 Stripe truth); wrote supabase/migrations/0002_phase2.sql.
-- Installed Stripe SDK & Vitest; implemented pure billing logic in billing.ts (11 unit tests passing).
-- Created scripts/stripe-setup.ts (`npm run stripe:setup`, idempotent products and INR recurring prices).
-- Built subscription state helpers, route guards, and Stripe synchronizer in src/lib/subscription.ts.
-- Built /subscribe with resilient customer creation, checkout sessions, and portal redirects.
-- Built idempotent Stripe webhook at /api/stripe/webhook with signature verification and invoice recording.
-- Enhanced /dashboard with subscription status card, direct checkout sync, and billing portal actions.
-- Created /dashboard/scores with requireActiveSubscription() guard.
-- Updated .env.example, package.json, and README.md with webhook and Stripe setup docs.
-- Verified: `npm test`, `npm run typecheck`, and `npm run build` all pass with zero errors.
+- SPEC.md updated (A17-A19: draw simulation, pool base/carry-in, winner verification).
+- 0004_phase4.sql: publish_draw stored procedure (atomic entries & winners insert) and RLS.
+- Draw engine (src/lib/draw.ts, draw.test.ts): pure business logic for random/algorithmic modes, pool math, tier splits, and rollover.
+- Admin draw system: src/lib/draw-server.ts, /admin/draws (simulation preview, tier table, publish confirm).
+- Winners & verification: /admin/winners (proof review via 60s signed URLs, approve/reject, payout guard), /dashboard/winnings (user prize tracking & 5MB image upload to winner-proofs).
+- Verified: `npm test` (27 tests), `npm run typecheck`, and `npm run build` all pass with zero errors.
 
 ## Key files
-- src/lib/billing.ts & src/lib/billing.test.ts
-- src/lib/subscription.ts & src/lib/stripe.ts
-- src/app/api/stripe/webhook/route.ts & src/middleware.ts
-- src/app/subscribe/ (page.tsx, actions.ts)
-- src/app/dashboard/ (page.tsx, scores/page.tsx)
-- supabase/migrations/0002_phase2.sql & scripts/stripe-setup.ts
+- src/lib/draw.ts, src/lib/draw.test.ts, src/lib/draw-server.ts, src/lib/admin.ts
+- src/app/admin/draws/ (page.tsx, actions.ts, publish-button.tsx)
+- src/app/admin/winners/ (page.tsx, actions.ts)
+- src/app/dashboard/winnings/ (page.tsx, actions.ts)
+- supabase/migrations/0004_phase4.sql
 
 ## Known bugs / Notes
-- None. Run `0002_phase2.sql` in Supabase SQL editor when convenient for schema sync.
+- None. Execute `supabase/migrations/0004_phase4.sql` in Supabase SQL editor and create private storage bucket `winner-proofs`.

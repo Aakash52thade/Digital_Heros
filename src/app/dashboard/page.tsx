@@ -4,6 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { logoutAction } from "@/app/auth/actions";
 import { openBillingPortal } from "@/app/subscribe/actions";
 import { getSubscriptionState, syncSubscriptionFromStripe } from "@/lib/subscription";
+import {
+  monthlyEquivalentMinor,
+  getCharityPercentRange,
+  calculateCharityContributionMinor,
+} from "@/lib/charity";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CharityCardForm } from "./charity-card-client";
 
 export const metadata = {
   title: "Dashboard - Digital Heroes",
@@ -35,7 +41,7 @@ export default async function DashboardPage({
 
   const userId = user?.id || "";
 
-  // Immediate checkout return sync: don't wait for webhook delivery
+  // Direct checkout sync if returning from Stripe
   if (searchParams?.checkout === "success" && searchParams.session_id && userId) {
     let currentState = await getSubscriptionState(userId);
     if (!currentState.active) {
@@ -43,10 +49,7 @@ export default async function DashboardPage({
         const session = await stripe.checkout.sessions.retrieve(
           searchParams.session_id
         );
-        if (
-          session.client_reference_id === userId &&
-          session.subscription
-        ) {
+        if (session.client_reference_id === userId && session.subscription) {
           const subId =
             typeof session.subscription === "string"
               ? session.subscription
@@ -59,20 +62,69 @@ export default async function DashboardPage({
     }
   }
 
-  // Fetch updated subscription state and profile
-  let subState = await getSubscriptionState(userId);
+  // Fetch subscription, profile, active charities, platform settings & plan
+  const subState = await getSubscriptionState(userId);
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, role, charity_id, charity_percent, charities(id, name, slug)")
     .eq("id", userId)
     .maybeSingle();
+
+  const { data: allCharities } = await supabase
+    .from("charities")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  const { data: settings } = await supabase
+    .from("platform_settings")
+    .select("min_charity_percent, prize_pool_percent")
+    .eq("id", 1)
+    .single();
+
+  const settingsConfig = {
+    min_charity_percent: settings?.min_charity_percent ?? 10,
+    prize_pool_percent: settings?.prize_pool_percent ?? 50,
+  };
+  const { min: minPercent, max: maxPercent } = getCharityPercentRange(settingsConfig);
+
+  // Fetch plan price for monthly equivalent
+  let monthlyFeeMinor = 49900; // default benchmark
+  if (subState.planKey) {
+    const { data: planRow } = await supabase
+      .from("plans")
+      .select("price_minor, interval")
+      .eq("key", subState.planKey)
+      .maybeSingle();
+
+    if (planRow) {
+      monthlyFeeMinor = monthlyEquivalentMinor(planRow);
+    }
+  }
+
+  const charityPercent = profile?.charity_percent ?? minPercent;
+  const charityContributionMinor = calculateCharityContributionMinor(
+    monthlyFeeMinor,
+    charityPercent
+  );
+
+  const rsX = Math.floor(charityContributionMinor / 100);
+  const rsY = Math.floor(monthlyFeeMinor / 100);
+
+  const charityRelation = profile?.charities as unknown as {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+
+  const charityName = charityRelation?.name || "No charity chosen";
 
   const name =
     profile?.full_name || user?.user_metadata?.full_name || "Valued Hero";
   const email = user?.email || "";
 
-  // Determine status label and badge color
+  // Subscription status label
   let statusLabel = "Inactive";
   let statusBadgeClass = "bg-muted text-muted-foreground";
 
@@ -119,9 +171,15 @@ export default async function DashboardPage({
               Welcome back to your Digital Heroes portal
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant="outline">
+              <Link href="/charities">Explore Charities</Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href="/dashboard/scores">Golf Scores</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/dashboard/winnings">My Winnings</Link>
             </Button>
             <form action={logoutAction}>
               <Button variant="ghost" type="submit">
@@ -193,13 +251,55 @@ export default async function DashboardPage({
             </CardFooter>
           </Card>
 
-          {/* Account Overview Card */}
+          {/* Charity Card: Task 6 */}
           <Card className="border-border flex flex-col justify-between">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Your Charity</CardTitle>
+                <span className="text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+                  {charityPercent}% of fee
+                </span>
+              </div>
+              <CardDescription>
+                Direct impact generated by your subscription
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  Supported Charity
+                </p>
+                <p className="text-base font-semibold text-foreground">
+                  {charityName}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  Monthly Giving
+                </p>
+                <p className="text-sm font-medium text-primary">
+                  Rs {rsX} of your Rs {rsY} per month goes to {charityName}
+                </p>
+              </div>
+            </CardContent>
+            <CardFooter className="pt-2 flex flex-col items-start gap-2">
+              <CharityCardForm
+                charities={allCharities || []}
+                currentCharityId={profile?.charity_id || ""}
+                currentCharityPercent={charityPercent}
+                minPercent={minPercent}
+                maxPercent={maxPercent}
+              />
+            </CardFooter>
+          </Card>
+
+          {/* Account Overview Card */}
+          <Card className="border-border md:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle className="text-xl">Profile Information</CardTitle>
               <CardDescription>Account contact and role details</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="grid sm:grid-cols-3 gap-4">
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   Name
@@ -221,12 +321,6 @@ export default async function DashboardPage({
                 </p>
               </div>
             </CardContent>
-            <CardFooter className="pt-2">
-              <p className="text-xs text-muted-foreground">
-                Charity selection and score management unlocked with active
-                membership.
-              </p>
-            </CardFooter>
           </Card>
         </div>
       </div>
