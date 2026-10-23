@@ -21,6 +21,7 @@ Execute migrations in your Supabase project (via SQL Editor):
 - `supabase/migrations/0002_phase2.sql` (Phase 2 charity percentage check and nullable payment charity)
 - `supabase/migrations/0003_phase3.sql` (Phase 3 charity category, subscription RLS guard, rolling-5 trigger)
 - `supabase/migrations/0004_phase4.sql` (Phase 4 publish_draw function, draw/winner RLS)
+- `supabase/migrations/0005_phase5.sql` (Phase 5 admin_report aggregation function)
 
 ## 3. Seed Database & Stripe Products
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireActiveSubscription } from "@/lib/subscription";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,8 +16,15 @@ export const metadata = {
 };
 
 export default async function WinningsPage() {
-  const { user } = await requireActiveSubscription();
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // A10: only require auth (not active subscription) — winners who cancelled can still submit proof
+  if (!user) {
+    redirect("/login");
+  }
 
   const { data: winnings } = await supabase
     .from("winners")
