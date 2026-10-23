@@ -1,0 +1,12 @@
+# Rules for every session
+- Read SPEC.md and PROGRESS.md at the start. Do one phase per session only.
+- At the end of a phase, update PROGRESS.md (max 30 lines: what is done, key files, known bugs).
+- Stack: Next.js (App Router) + TypeScript strict + Tailwind + shadcn/ui. Supabase (Postgres, Auth, Storage) via @supabase/ssr. Stripe in Phase 2. Vitest in Phase 4. Framer Motion in Phase 6.
+- Money is always an integer in minor units (paise). Never floats.
+- Service role key only in server-only code (src/lib/supabase/admin.ts). Never in client code, never NEXT_PUBLIC_.
+- On the server, check auth with supabase.auth.getUser(). Check roles from profiles.role in the DB.
+- Validate all input with zod on the server.
+- Business logic (scores rules, draw, prizes) lives in src/lib as pure functions with no DB calls.
+- Comment every non-obvious function. Small files. No unused code.
+- Colors, fonts, spacing only from design tokens. No hard-coded colors in components.
+- UI must not look like a golf site: no golf imagery or clichés. Charity-first, emotional, modern.
