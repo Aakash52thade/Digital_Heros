@@ -48,6 +48,23 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
+  // Helper to copy session cookies when returning a redirect response
+  function createRedirectResponse(targetUrl: URL) {
+    const redirectResponse = NextResponse.redirect(targetUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, {
+        path: cookie.path,
+        domain: cookie.domain,
+        maxAge: cookie.maxAge,
+        expires: cookie.expires,
+        sameSite: cookie.sameSite,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+      });
+    });
+    return redirectResponse;
+  }
+
   // Logged-in users visiting /login or /signup are redirected.
   // Preserve checkout query params so the dashboard can show the success banner.
   if (user && (path === "/login" || path === "/signup")) {
@@ -60,7 +77,7 @@ export async function updateSession(request: NextRequest) {
       url.searchParams.set("checkout", checkout);
       url.searchParams.set("session_id", sessionId);
     }
-    return NextResponse.redirect(url);
+    return createRedirectResponse(url);
   }
 
   // /dashboard/* and /admin/* require authentication
@@ -68,7 +85,7 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
-    return NextResponse.redirect(url);
+    return createRedirectResponse(url);
   }
 
   return supabaseResponse;

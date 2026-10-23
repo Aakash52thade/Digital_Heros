@@ -26,7 +26,7 @@ export default async function CharityDetailPage({
   const { data: charity } = await supabase
     .from("charities")
     .select("*")
-    .eq("slug", params.slug)
+    .eq("slug", decodeURIComponent(params.slug))
     .eq("is_active", true)
     .maybeSingle();
 
